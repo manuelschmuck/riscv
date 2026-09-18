@@ -1,6 +1,7 @@
 use core::arch::global_asm;
 
 /// Parse cfg attributes inside a global_asm call.
+#[cfg(not(feature = "custom-start"))]
 macro_rules! cfg_global_asm {
     {@inner, [$($x:tt)*], } => {
         global_asm!{$($x)*}
@@ -40,6 +41,8 @@ riscv_macros::rvrt_llvm_arch_patch!();
 // Entry point of all programs (_start). It initializes DWARF call frame information,
 // the stack pointer, the frame pointer (needed for closures to work in start_rust)
 // and the global pointer. Then it calls _start_rust.
+// With the custom-start feature the user provides _start instead (custom-start feature).
+#[cfg(not(feature = "custom-start"))]
 cfg_global_asm!(
     ".section .init, \"ax\"
     .global _start
