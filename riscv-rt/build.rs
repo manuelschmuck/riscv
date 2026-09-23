@@ -41,7 +41,9 @@ fn add_linker_script(arch_width: u32) -> io::Result<()> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     fs::write(out_dir.join("link.x"), content)?;
     println!("cargo:rustc-link-search={}", out_dir.display());
-    println!("cargo:rerun-if-changed=link.x");
+    println!("cargo:rerun-if-changed=link.x.in");
+    println!("cargo:rerun-if-changed=exceptions.x");
+    println!("cargo:rerun-if-changed=interrupts.x");
 
     Ok(())
 }
