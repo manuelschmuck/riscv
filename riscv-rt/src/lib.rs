@@ -122,6 +122,16 @@
 //! harts' blocks share one. Set it to the page size when the thread-locals hold page-aligned
 //! objects.
 //!
+//! ### `_tls_zeroed_by_loader`
+//!
+//! This symbol tells whether the memory the thread-local blocks occupy is zero when the image
+//! starts, as an ELF loader that zero-fills a segment's memory past its file bytes leaves it. When
+//! set to 1, a hart's first start copies `.tdata` alone into its block and leaves the `.tbss` part
+//! as loaded; a block that was filled before is filled whole again. It is only meaningful with the
+//! `tls` feature.
+//!
+//! If omitted this symbol value will default to 0: every block is filled whole on every start.
+//!
 //! ### Example of a fully featured `memory.x` file
 //!
 //! Next, we present a `memory.x` file that includes all the symbols
@@ -149,6 +159,7 @@
 //! _hart_stack_size = 1K;                          /* Set stack size per hart to 1KB */
 //! _stack_start = ORIGIN(L2_LIM) + LENGTH(L2_LIM);
 //! _hart_tls_align = 4K;                           /* Thread-local blocks on page boundaries */
+//! _tls_zeroed_by_loader = 1;                      /* The loader zero-fills the blocks */
 //! ```
 //!
 //! # Starting a minimal application
@@ -625,7 +636,11 @@
 //! On every start, after RAM is initialized, `_start` points `tp` at the calling hart's block and fills
 //! it from the template, `.tdata` copied and the rest zeroed. A thread-local is private to its hart, so
 //! each hart fills its own block with no synchronization, and a hart that is started again finds its
-//! thread-locals as the template again.
+//! thread-locals as the template again. The template carries a marker word, `__tls_filled`, that is 1,
+//! and so is 1 in a block once filled and 0 in a block the loader zeroed that no hart has filled yet.
+//! When `memory.x` sets [`_tls_zeroed_by_loader`](#_tls_zeroed_by_loader) to 1, a first start finds the
+//! marker 0 and copies `.tdata` alone, leaving the `.tbss` part of the block as the loader zeroed it; a
+//! restart finds the marker 1 and fills the block whole.
 //!
 //! The target must declare `has-thread-local` and the code must be compiled for the local-exec TLS
 //! model (`-Z tls-model=local-exec`), so that a thread-local is reached at a fixed offset from `tp`. In

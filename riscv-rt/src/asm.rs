@@ -246,9 +246,10 @@ _abs_start:
 }
 
 // INITIALIZE THIS HART'S THREAD-LOCAL BLOCK: point tp at block hartid of the .tls
-// region and fill it from the template, .tdata copied and the rest zeroed. Standard
-// per-thread setup, run by every hart on every start: a thread-local is private to
-// its hart, so nothing else has written the block.
+// region and fill it from the template, .tdata copied and the rest zeroed, unless the
+// block is zero as loaded (_tls_zeroed_by_loader) and was never filled, which its
+// marker tells. Standard per-thread setup, run by every hart on every start: a
+// thread-local is private to its hart, so nothing else has written the block.
 #[cfg(feature = "tls")]
 {
     "la tp, __stls",
@@ -270,6 +271,11 @@ _abs_start:
 6:  ",
         "add tp, tp, t0",
     }
+    "// Was the block filled before? The template's marker is 1; a block the loader
+    // zeroed and no hart has filled reads 0. Read before the copy writes it.
+    lui t0, %tprel_hi(__tls_filled)
+    add t0, t0, tp, %tprel_add(__tls_filled)
+    lw a4, %tprel_lo(__tls_filled)(t0)",
     "// Copy the template's initialized part
     la t0, __stdata
     la t1, __etdata
@@ -289,20 +295,25 @@ _abs_start:
     addi t2, t2, 8
     bltu t0, t1, 7b",
     "
-8:  // Zero out the rest of the block
-    lui t1, %hi(_hart_tls_size)
+8:  // Zero out the rest of the block, unless it is zero already: the user says the
+    // blocks were zero as loaded, and this one was never filled
+    lui t1, %hi(_tls_zeroed_by_loader)
+    add t1, t1, %lo(_tls_zeroed_by_loader)
+    beqz t1, 9f
+    beqz a4, 10f
+9:  lui t1, %hi(_hart_tls_size)
     add t1, t1, %lo(_hart_tls_size)
     add t1, tp, t1
     bgeu t2, t1, 10f
-9:  ",
+16: ",
     #[cfg(target_arch = "riscv32")]
     "sw zero, 0(t2)
     addi t2, t2, 4
-    bltu t2, t1, 9b",
+    bltu t2, t1, 16b",
     #[cfg(target_arch = "riscv64")]
     "sd zero, 0(t2)
     addi t2, t2, 8
-    bltu t2, t1, 9b",
+    bltu t2, t1, 16b",
     "
 10:", // Thread-local block initialized
 }
@@ -349,6 +360,17 @@ _default_mp_hook:
     j 1b
 2:  li a0, 1
     ret",
+
+    #[cfg(feature = "tls")]
+    // The template's marker: a word of .tdata that is not zero, so a block reads it
+    // as 1 once filled and as 0 while it is as the loader zeroed it. `_start` reads it
+    // at its tp-relative offset, the way local-exec code reaches any thread-local.
+    ".pushsection .tdata.riscv_rt_tls_filled, \"awT\", @progbits
+    .balign 4
+    .type __tls_filled, @tls_object
+__tls_filled:
+    .word 1
+    .popsection",
 );
 
 riscv_macros::rvrt_default_start_trap!();

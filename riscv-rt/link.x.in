@@ -84,6 +84,13 @@ PROVIDE(_hart_tls_align = 64);
 /* One hart's thread-local block: the template rounded up to _hart_tls_align. */
 _hart_tls_size = ALIGN(__etbss - __stdata, _hart_tls_align);
 
+/* Whether the memory the blocks occupy is zero when the image starts, as an
+   ELF loader that zero-fills a segment's memory past its file bytes leaves
+   it. 1 lets a hart's first start skip zeroing the .tbss part of its block: a
+   block that was filled before carries the template's marker and is filled
+   whole again. 0, the default, fills every block whole on every start. */
+PROVIDE(_tls_zeroed_by_loader = 0);
+
 ${TLS_CHECK}
 SECTIONS
 {
@@ -191,7 +198,8 @@ SECTIONS
   /* One thread-local block per hart the image is linked for, in hart order,
    * past the range the runtime zeroes: a hart fills its own block from the
    * template before it reads a thread-local, so the memory need not be zero
-   * beforehand. */
+   * beforehand, and when it is (_tls_zeroed_by_loader) the first fill copies
+   * .tdata alone. */
   .tls (NOLOAD) : ALIGN(_hart_tls_align)
   {
     __stls = .;

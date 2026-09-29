@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   `.rodata` and one block per hart past `.bss`, and `_start` points `tp` at the
   calling hart's block and fills it from the template on every start. Without the
   feature, an image that declares a thread-local fails to link. `memory.x` may set
-  `_hart_tls_align`, the blocks' alignment, 64 bytes by default.
+  `_hart_tls_align`, the blocks' alignment, 64 bytes by default, and
+  `_tls_zeroed_by_loader`, which lets a first start copy `.tdata` alone into a
+  block the loader zeroed, told by a marker word the template carries.
 - New `relocate` feature, for a runtime loaded elsewhere than it is linked: `_start`
   runs the early boot and the RAM initialization where the image was loaded, then
   calls the user's `__relocate`, which makes the linked addresses reachable and
