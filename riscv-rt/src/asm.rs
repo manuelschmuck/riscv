@@ -176,6 +176,68 @@ _abs_start:
     "
 4:", // RAM initialized
 
+// INITIALIZE THIS HART'S THREAD-LOCAL BLOCK: point tp at block hartid of the .tls
+// region and fill it from the template, .tdata copied and the rest zeroed. Standard
+// per-thread setup, run by every hart on every start: a thread-local is private to
+// its hart, so nothing else has written the block.
+#[cfg(feature = "tls")]
+{
+    "la tp, __stls",
+    #[cfg(not(feature = "single-hart"))]
+    {
+        // s0 holds the hart id: a0 is what _mp_hook returned.
+        "mv t2, s0
+        lui t1, %hi(_hart_tls_size)
+        add t1, t1, %lo(_hart_tls_size)",
+        #[cfg(riscvm)]
+        "mul t0, t2, t1",
+        #[cfg(not(riscvm))]
+        "mv t0, x0
+        beqz t2, 6f  // skip if hart ID is 0
+5:
+        add t0, t0, t1
+        addi t2, t2, -1
+        bnez t2, 5b
+6:  ",
+        "add tp, tp, t0",
+    }
+    "// Copy the template's initialized part
+    la t0, __stdata
+    la t1, __etdata
+    mv t2, tp
+    bgeu t0, t1, 8f
+7:  ",
+    #[cfg(target_arch = "riscv32")]
+    "lw t3, 0(t0)
+    addi t0, t0, 4
+    sw t3, 0(t2)
+    addi t2, t2, 4
+    bltu t0, t1, 7b",
+    #[cfg(target_arch = "riscv64")]
+    "ld t3, 0(t0)
+    addi t0, t0, 8
+    sd t3, 0(t2)
+    addi t2, t2, 8
+    bltu t0, t1, 7b",
+    "
+8:  // Zero out the rest of the block
+    lui t1, %hi(_hart_tls_size)
+    add t1, t1, %lo(_hart_tls_size)
+    add t1, tp, t1
+    bgeu t2, t1, 10f
+9:  ",
+    #[cfg(target_arch = "riscv32")]
+    "sw zero, 0(t2)
+    addi t2, t2, 4
+    bltu t2, t1, 9b",
+    #[cfg(target_arch = "riscv64")]
+    "sd zero, 0(t2)
+    addi t2, t2, 8
+    bltu t2, t1, 9b",
+    "
+10:", // Thread-local block initialized
+}
+
 // INITIALIZE FLOATING POINT UNIT
 #[cfg(any(riscvf, riscvd))]
 {

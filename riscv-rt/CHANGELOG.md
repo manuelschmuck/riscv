@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
+- New `tls` feature: the linker script lays out the thread-local template beside
+  `.rodata` and one block per hart past `.bss`, and `_start` points `tp` at the
+  calling hart's block and fills it from the template on every start. Without the
+  feature, an image that declares a thread-local fails to link.
 - New `custom-start` feature: the runtime provides no `_start`, so a runtime loaded
   elsewhere than it is linked (an S-mode kernel at a virtual address) can bring its
   own start-up while keeping the linker script, the trap entry and the `entry`

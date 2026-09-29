@@ -13,6 +13,8 @@
 //!
 //! - Enabling the FPU before the program entry point if the target has the `f` or `d` extension.
 //!
+//! - Setting up thread-local storage, one block per hart, if the `tls` feature is enabled.
+//!
 //! - Support for a runtime in supervisor mode, that can be bootstrapped via
 //!   [Supervisor Binary Interface (SBI)](https://github.com/riscv-non-isa/riscv-sbi-doc).
 //!
@@ -507,7 +509,7 @@
 //!
 //! When enabled, the runtime does **not** provide `_start`: the user defines it, and with it everything
 //! that runs before their own code (interrupts off, the trap vector, the stack, `gp`, `.data` and `.bss`
-//! initialization, the FPU). The runtime still provides the linker script, the trap entry (`_start_trap`
+//! initialization, the thread-local block under [`tls`](#tls), the FPU). The runtime still provides the linker script, the trap entry (`_start_trap`
 //! and the exception/interrupt dispatch) and the [`entry`] attribute, which exports `main`.
 //!
 //! This is for a runtime whose `_start` runs at an address other than the one it was linked at, for
@@ -566,6 +568,24 @@
 //! is provided by this crate). If the feature is disabled, the `__post_init` function is not required.
 //!
 //! You can use the [`#[post_init]`][attr-post-init] attribute to define a post-init function with Rust.
+//!
+//! ## `tls`
+//!
+//! When enabled, the runtime sets up thread-local storage for every hart before `main`. The linker
+//! script lays out the thread-local template (`.tdata` then `.tbss`) beside `.rodata`, and one block per
+//! hart past `.bss`: `_max_hart_id + 1` blocks of `_hart_tls_size` bytes each, the template rounded up
+//! to 64 bytes, starting at `__stls`. On every start, after RAM is initialized, `_start` points `tp` at
+//! the calling hart's block and fills it from the template, `.tdata` copied and the rest zeroed. A
+//! thread-local is private to its hart, so each hart fills its own block with no synchronization, and a
+//! hart that is started again finds its thread-locals as the template again.
+//!
+//! The target must declare `has-thread-local` and the code must be compiled for the local-exec TLS
+//! model (`-Z tls-model=local-exec`), so that a thread-local is reached at a fixed offset from `tp`. A
+//! thread-local may ask for an alignment of up to 64 bytes. In Rust, `#[thread_local]` statics need the
+//! nightly `thread_local` feature. Without this feature enabled, the linker refuses an image that
+//! declares a thread-local, since nothing would point `tp` at a block. Under [`custom-start`](#custom-start)
+//! the feature provides the layout alone: the user's `_start` points `tp` at block `hartid`,
+//! `__stls + hartid * _hart_tls_size`, and fills it, as the runtime's would.
 //!
 //! ## `custom-setup-interrupts`
 //!

@@ -73,6 +73,12 @@ PROVIDE(_max_hart_id = 0);
 PROVIDE(_hart_stack_size = SIZEOF(.stack) / (_max_hart_id + 1));
 PROVIDE(_heap_size = 0);
 
+/* One hart's thread-local block: the template (.tdata then .tbss) rounded up
+   to 64 bytes, so that every block starts on a 64-byte boundary and a
+   thread-local's offset from tp is its offset in the template. */
+_hart_tls_size = ALIGN(__etbss - __stdata, 64);
+
+${TLS_CHECK}
 SECTIONS
 {
   .text.dummy (NOLOAD) :
@@ -119,6 +125,28 @@ SECTIONS
     __erodata = .;
   } > REGION_RODATA
 
+  /* The thread-local template: what every hart's block starts out as, read
+   * only, so it lives beside .rodata. The runtime copies .tdata into a block
+   * and zeroes the rest; .tbss takes no address space of its own, its symbols
+   * continue past .tdata. The template starts on a 64-byte boundary, which
+   * bounds the alignment a thread-local may ask for. */
+  .tdata : ALIGN(64)
+  {
+    . = ALIGN(64);
+    __stdata = .;
+    *(.tdata .tdata.*);
+    . = ALIGN(${ARCH_WIDTH});
+    __etdata = .;
+  } > REGION_RODATA
+
+  .tbss (NOLOAD) : ALIGN(${ARCH_WIDTH})
+  {
+    __stbss = .;
+    *(.tbss .tbss.* .tcommon);
+    . = ALIGN(${ARCH_WIDTH});
+    __etbss = .;
+  } > REGION_RODATA
+
   .data : ALIGN(${ARCH_WIDTH})
   {
     . = ALIGN(${ARCH_WIDTH});
@@ -153,6 +181,17 @@ SECTIONS
    * output region or load region in those user sections! */
   . = ALIGN(${ARCH_WIDTH});
   __ebss = .;
+
+  /* One thread-local block per hart the image is linked for, in hart order,
+   * past the range the runtime zeroes: a hart fills its own block from the
+   * template before it reads a thread-local, so the memory need not be zero
+   * beforehand. */
+  .tls (NOLOAD) : ALIGN(64)
+  {
+    __stls = .;
+    . += (_max_hart_id + 1) * _hart_tls_size;
+    __etls = .;
+  } > REGION_BSS
 
   /* Uninitialized data segment. In contrast with .bss, .uninit is not initialized to zero by
    * the runtime, and might contain residual data from previous executions or random values
@@ -221,6 +260,13 @@ BUG(riscv-rt): the LMA of .data is not ${ARCH_WIDTH}-byte aligned");
 
 ASSERT(__sbss % ${ARCH_WIDTH} == 0 && __ebss % ${ARCH_WIDTH} == 0, "
 BUG(riscv-rt): .bss is not ${ARCH_WIDTH}-byte aligned");
+
+ASSERT(__stdata % 64 == 0 && __stls % 64 == 0 && _hart_tls_size % 64 == 0, "
+BUG(riscv-rt): the thread-local template or the blocks are not 64-byte aligned");
+
+ASSERT(ALIGNOF(.tdata) <= 64 && ALIGNOF(.tbss) <= 64, "
+ERROR(riscv-rt): a thread-local asks for more than 64-byte alignment, which the
+per-hart blocks do not provide");
 
 ASSERT(__sheap % 4 == 0, "
 BUG(riscv-rt): start of .heap is not 4-byte aligned");

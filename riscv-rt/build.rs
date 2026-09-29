@@ -37,6 +37,15 @@ fn add_linker_script(arch_width: u32) -> io::Result<()> {
 
     content = content.replace("${INCLUDE_LINKER_FILES}", &include_content);
 
+    // Without the tls feature nothing points tp at a block, so an image that declares a
+    // thread-local is refused at link time rather than reading through a stale tp.
+    let tls_check = if env::var_os("CARGO_FEATURE_TLS").is_some() {
+        ""
+    } else {
+        "ASSERT(__etbss == __stdata, \"\nERROR(riscv-rt): thread-locals need the `tls` feature\");\n"
+    };
+    content = content.replace("${TLS_CHECK}", tls_check);
+
     // Put the linker script somewhere the linker can find it
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     fs::write(out_dir.join("link.x"), content)?;
