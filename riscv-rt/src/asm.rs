@@ -209,15 +209,15 @@ _abs_start:
     bgeu t0, t1, 8f
 7:  ",
     #[cfg(target_arch = "riscv32")]
-    "lw t3, 0(t0)
+    "lw a3, 0(t0)
     addi t0, t0, 4
-    sw t3, 0(t2)
+    sw a3, 0(t2)
     addi t2, t2, 4
     bltu t0, t1, 7b",
     #[cfg(target_arch = "riscv64")]
-    "ld t3, 0(t0)
+    "ld a3, 0(t0)
     addi t0, t0, 8
-    sd t3, 0(t2)
+    sd a3, 0(t2)
     addi t2, t2, 8
     bltu t0, t1, 7b",
     "
