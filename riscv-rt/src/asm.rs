@@ -40,8 +40,9 @@ riscv_macros::rvrt_llvm_arch_patch!();
 // Entry point of all programs (_start). It initializes DWARF call frame information,
 // the stack pointer, the frame pointer (needed for closures to work in start_rust)
 // and the global pointer. Then it calls _start_rust.
-// With the relocate feature it runs where the image was loaded until RAM is initialized,
-// then calls __relocate to reach the linked addresses (relocate feature).
+// With the relocate feature it runs where the image was loaded until RAM is initialized and,
+// with tls, this hart's thread-local block is filled, then calls __relocate to reach the
+// linked addresses.
 cfg_global_asm!(
     ".section .init, \"ax\"
     .global _start
@@ -177,79 +178,13 @@ _abs_start:
     "
 4:", // RAM initialized
 
-// RELOCATE: RAM is initialized where the image was loaded. The user's __relocate makes the
-// linked addresses reachable and returns to the linked address of the instruction after the
-// jump, with the arguments _start was entered with in a0-a2, the address _start was loaded at
-// in a3 and the offset from there to where it was linked in a4.
-#[cfg(feature = "relocate")]
-{
-    "mv a0, s0
-    mv a1, s1",
-    #[cfg(riscvi)]
-    "mv a2, s2",
-    #[cfg(not(riscvi))]
-    "mv a2, a5", // RVE does not include s2, so we use a5 to preserve a2
-    "la a3, _start",
-    // t0 = the linked address of _start, from an absolute value the linker writes
-    #[cfg(target_arch = "riscv32")]
-    "lui t0, %hi(_start)
-    addi t0, t0, %lo(_start)",
-    #[cfg(target_arch = "riscv64")]
-    "11:
-    auipc t0, %pcrel_hi(13f)
-    ld t0, %pcrel_lo(11b)(t0)",
-    "sub a4, t0, a3
-    la ra, 12f
-    add ra, ra, a4
-    la t0, __relocate
-    jr t0",
-    #[cfg(target_arch = "riscv64")]
-    ".balign 8
-13:
-    .dword _start",
-    "
-12:", // Running at the linked addresses from here on
-
-    // SET GLOBAL POINTER, STACK POINTER AND PRE-INIT TRAP VECTOR AGAIN, at the linked addresses
-    ".option push
-    .option norelax
-    la gp, __global_pointer$
-    .option pop",
-    #[cfg(not(feature = "single-hart"))]
-    {
-        "mv t2, s0
-        lui t1, %hi(_hart_stack_size)
-        add t1, t1, %lo(_hart_stack_size)",
-        #[cfg(riscvm)]
-        "mul t0, t2, t1",
-        #[cfg(not(riscvm))]
-        "mv t0, x0
-        beqz t2, 15f  // skip if hart ID is 0
-14:
-        add t0, t0, t1
-        addi t2, t2, -1
-        bnez t2, 14b
-15:  ",
-    }
-    "la t1, _stack_start",
-    #[cfg(not(feature = "single-hart"))]
-    "sub t1, t1, t0",
-    "andi sp, t1, -16", // align stack to 16-bytes
-    #[cfg(not(feature = "no-xtvec"))]
-    {
-        "la t0, _pre_init_trap",
-        #[cfg(feature = "s-mode")]
-        "csrw stvec, t0",
-        #[cfg(not(feature = "s-mode"))]
-        "csrw mtvec, t0",
-    }
-}
-
 // INITIALIZE THIS HART'S THREAD-LOCAL BLOCK: point tp at block hartid of the .tls
 // region and fill it from the template, .tdata copied and the rest zeroed, unless the
 // block is zero as loaded (_tls_zeroed_by_loader) and was never filled, which its
 // marker tells. Standard per-thread setup, run by every hart on every start: a
-// thread-local is private to its hart, so nothing else has written the block.
+// thread-local is private to its hart, so nothing else has written the block. Runs
+// where the image was loaded, like the RAM initialization, so that __relocate may use
+// thread-locals (relocate feature); tp is set again at the linked address after it.
 #[cfg(feature = "tls")]
 {
     "la tp, __stls",
@@ -316,6 +251,98 @@ _abs_start:
     bltu t2, t1, 16b",
     "
 10:", // Thread-local block initialized
+}
+
+// RELOCATE: RAM is initialized, and with tls this hart's thread-local block filled, where the
+// image was loaded. The user's __relocate makes the linked addresses reachable and returns to
+// the linked address of the instruction after the jump, with the arguments _start was entered
+// with in a0-a2, the address _start was loaded at in a3 and the offset from there to where it
+// was linked in a4.
+#[cfg(feature = "relocate")]
+{
+    "mv a0, s0
+    mv a1, s1",
+    #[cfg(riscvi)]
+    "mv a2, s2",
+    #[cfg(not(riscvi))]
+    "mv a2, a5", // RVE does not include s2, so we use a5 to preserve a2
+    "la a3, _start",
+    // t0 = the linked address of _start, from an absolute value the linker writes
+    #[cfg(target_arch = "riscv32")]
+    "lui t0, %hi(_start)
+    addi t0, t0, %lo(_start)",
+    #[cfg(target_arch = "riscv64")]
+    "11:
+    auipc t0, %pcrel_hi(13f)
+    ld t0, %pcrel_lo(11b)(t0)",
+    "sub a4, t0, a3
+    la ra, 12f
+    add ra, ra, a4
+    la t0, __relocate
+    jr t0",
+    #[cfg(target_arch = "riscv64")]
+    ".balign 8
+13:
+    .dword _start",
+    "
+12:", // Running at the linked addresses from here on
+
+    // SET GLOBAL POINTER, STACK POINTER, PRE-INIT TRAP VECTOR AND THREAD POINTER AGAIN, at the
+    // linked addresses
+    ".option push
+    .option norelax
+    la gp, __global_pointer$
+    .option pop",
+    #[cfg(not(feature = "single-hart"))]
+    {
+        "mv t2, s0
+        lui t1, %hi(_hart_stack_size)
+        add t1, t1, %lo(_hart_stack_size)",
+        #[cfg(riscvm)]
+        "mul t0, t2, t1",
+        #[cfg(not(riscvm))]
+        "mv t0, x0
+        beqz t2, 15f  // skip if hart ID is 0
+14:
+        add t0, t0, t1
+        addi t2, t2, -1
+        bnez t2, 14b
+15:  ",
+    }
+    "la t1, _stack_start",
+    #[cfg(not(feature = "single-hart"))]
+    "sub t1, t1, t0",
+    "andi sp, t1, -16", // align stack to 16-bytes
+    #[cfg(not(feature = "no-xtvec"))]
+    {
+        "la t0, _pre_init_trap",
+        #[cfg(feature = "s-mode")]
+        "csrw stvec, t0",
+        #[cfg(not(feature = "s-mode"))]
+        "csrw mtvec, t0",
+    }
+    // tp at the block's linked address; the block itself was filled before the hook.
+    #[cfg(feature = "tls")]
+    {
+        "la tp, __stls",
+        #[cfg(not(feature = "single-hart"))]
+        {
+            "mv t2, s0
+            lui t1, %hi(_hart_tls_size)
+            add t1, t1, %lo(_hart_tls_size)",
+            #[cfg(riscvm)]
+            "mul t0, t2, t1",
+            #[cfg(not(riscvm))]
+            "mv t0, x0
+            beqz t2, 18f  // skip if hart ID is 0
+17:
+            add t0, t0, t1
+            addi t2, t2, -1
+            bnez t2, 17b
+18:  ",
+            "add tp, tp, t0",
+        }
+    }
 }
 
 // INITIALIZE FLOATING POINT UNIT

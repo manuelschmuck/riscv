@@ -578,12 +578,13 @@
 //! address translation is enabled.
 //!
 //! When enabled, `_start` skips that jump, so the early boot (interrupts off, the pre-init trap vector,
-//! the hart ID check, `gp` and the stack, `_mp_hook`, `__pre_init` and the RAM initialization) runs where
-//! the image was loaded. Once RAM is initialized, the runtime calls `__relocate`, which makes the linked
-//! addresses reachable, typically by enabling address translation, and returns. The runtime resumes at
-//! its linked address, sets `gp`, the stack and the pre-init trap vector again there, and continues as
-//! usual: thread-local storage, the FPU, `__post_init` and `main`. Memory initialization stays the
-//! runtime's: `__relocate` only makes the image reachable where it was linked.
+//! the hart ID check, `gp` and the stack, `_mp_hook`, `__pre_init`, the RAM initialization and, with the
+//! `tls` feature, the fill of this hart's thread-local block) runs where the image was loaded. Once RAM
+//! is initialized, the runtime calls `__relocate`, which makes the linked addresses reachable, typically
+//! by enabling address translation, and returns. The runtime resumes at its linked address, sets `gp`,
+//! the stack, the pre-init trap vector and, with `tls`, `tp` again there, and continues as usual: the
+//! FPU, `__post_init` and `main`. Memory initialization stays the runtime's: `__relocate` only makes the
+//! image reachable where it was linked.
 //!
 //! If the feature is enabled, the `__relocate` function must be defined in the user code (i.e., no
 //! default implementation is provided by this crate). The runtime calls it with:
@@ -600,9 +601,12 @@
 //!   code and data only relative to the program counter. The same holds for `_mp_hook` and `__pre_init`,
 //!   which run before it.
 //! - Return with `ret` once the linked addresses are reachable.
-//! - Preserve the callee-saved registers `s0-s11`, as the calling convention says. `sp` and `gp` are the
-//!   runtime's to set again after the return. The stack `sp` points at may be used: at its load address
-//!   until the linked addresses are reachable, and at its linked address (`sp + a4`) afterwards.
+//! - Preserve the callee-saved registers `s0-s11`, as the calling convention says. `sp`, `gp` and, with
+//!   the `tls` feature, `tp` are the runtime's to set again after the return. The stack `sp` points at
+//!   may be used: at its load address until the linked addresses are reachable, and at its linked
+//!   address (`sp + a4`) afterwards.
+//! - With the `tls` feature, the hook is entered with `tp` at the hart's thread-local block, filled, at
+//!   its load address, so it may use thread-locals.
 //! - In RVE targets, do **NOT** use the `a5` register, as it is used to preserve the `a2` register.
 //!
 //! ### Implementation example
@@ -640,7 +644,9 @@
 //! and so is 1 in a block once filled and 0 in a block the loader zeroed that no hart has filled yet.
 //! When `memory.x` sets [`_tls_zeroed_by_loader`](#_tls_zeroed_by_loader) to 1, a first start finds the
 //! marker 0 and copies `.tdata` alone, leaving the `.tbss` part of the block as the loader zeroed it; a
-//! restart finds the marker 1 and fills the block whole.
+//! restart finds the marker 1 and fills the block whole. With the `relocate` feature the block is filled
+//! where the image was loaded, before `__relocate`, so that the hook may use thread-locals; `tp` is set
+//! again at the block's linked address after it.
 //!
 //! The target must declare `has-thread-local` and the code must be compiled for the local-exec TLS
 //! model (`-Z tls-model=local-exec`), so that a thread-local is reached at a fixed offset from `tp`. In

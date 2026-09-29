@@ -19,8 +19,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - New `relocate` feature, for a runtime loaded elsewhere than it is linked: `_start`
   runs the early boot and the RAM initialization where the image was loaded, then
   calls the user's `__relocate`, which makes the linked addresses reachable and
-  returns; the runtime resumes at the linked addresses and sets `gp`, the stack and
-  the pre-init trap vector again there. The user must define `__relocate`.
+  returns; the runtime resumes at the linked addresses and sets `gp`, the stack,
+  the pre-init trap vector and, with `tls`, `tp` again there. With `tls` the hart's
+  thread-local block is filled before the hook, so it may use thread-locals. The
+  user must define `__relocate`.
 
 ### Changed
 
