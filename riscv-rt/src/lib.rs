@@ -112,6 +112,16 @@
 //!
 //! If omitted this symbol value will default to `ORIGIN(REGION_STACK) + LENGTH(REGION_STACK)`.
 //!
+//! ### `_hart_tls_align`
+//!
+//! This symbol defines the alignment of a hart's thread-local block, and so of the thread-local
+//! template: a power of two of at least 64 bytes. A thread-local may ask for an alignment of up to
+//! this value. It is only meaningful with the `tls` feature.
+//!
+//! If omitted this symbol value will default to 64, a cache line on most cores, so that no two
+//! harts' blocks share one. Set it to the page size when the thread-locals hold page-aligned
+//! objects.
+//!
 //! ### Example of a fully featured `memory.x` file
 //!
 //! Next, we present a `memory.x` file that includes all the symbols
@@ -138,6 +148,7 @@
 //! _max_hart_id = 1;                               /* Two harts present */
 //! _hart_stack_size = 1K;                          /* Set stack size per hart to 1KB */
 //! _stack_start = ORIGIN(L2_LIM) + LENGTH(L2_LIM);
+//! _hart_tls_align = 4K;                           /* Thread-local blocks on page boundaries */
 //! ```
 //!
 //! # Starting a minimal application
@@ -606,16 +617,21 @@
 //! When enabled, the runtime sets up thread-local storage for every hart before `main`. The linker
 //! script lays out the thread-local template (`.tdata` then `.tbss`) beside `.rodata`, and one block per
 //! hart past `.bss`: `_max_hart_id + 1` blocks of `_hart_tls_size` bytes each, the template rounded up
-//! to 64 bytes, starting at `__stls`. On every start, after RAM is initialized, `_start` points `tp` at
-//! the calling hart's block and fills it from the template, `.tdata` copied and the rest zeroed. A
-//! thread-local is private to its hart, so each hart fills its own block with no synchronization, and a
-//! hart that is started again finds its thread-locals as the template again.
+//! to `_hart_tls_align` bytes, starting at `__stls`. The template and every block start on an
+//! `_hart_tls_align` boundary, so a thread-local's offset from `tp` is its offset in the template and a
+//! thread-local may ask for an alignment of up to `_hart_tls_align`: 64 bytes unless `memory.x` sets
+//! it, see [`_hart_tls_align`](#_hart_tls_align).
+//!
+//! On every start, after RAM is initialized, `_start` points `tp` at the calling hart's block and fills
+//! it from the template, `.tdata` copied and the rest zeroed. A thread-local is private to its hart, so
+//! each hart fills its own block with no synchronization, and a hart that is started again finds its
+//! thread-locals as the template again.
 //!
 //! The target must declare `has-thread-local` and the code must be compiled for the local-exec TLS
-//! model (`-Z tls-model=local-exec`), so that a thread-local is reached at a fixed offset from `tp`. A
-//! thread-local may ask for an alignment of up to 64 bytes. In Rust, `#[thread_local]` statics need the
-//! nightly `thread_local` feature. Without this feature enabled, the linker refuses an image that
-//! declares a thread-local, since nothing would point `tp` at a block.
+//! model (`-Z tls-model=local-exec`), so that a thread-local is reached at a fixed offset from `tp`. In
+//! Rust, `#[thread_local]` statics need the nightly `thread_local` feature. Without this feature
+//! enabled, the linker refuses an image that declares a thread-local, since nothing would point `tp` at
+//! a block.
 //!
 //! ## `custom-setup-interrupts`
 //!

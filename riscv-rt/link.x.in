@@ -73,10 +73,16 @@ PROVIDE(_max_hart_id = 0);
 PROVIDE(_hart_stack_size = SIZEOF(.stack) / (_max_hart_id + 1));
 PROVIDE(_heap_size = 0);
 
-/* One hart's thread-local block: the template (.tdata then .tbss) rounded up
-   to 64 bytes, so that every block starts on a 64-byte boundary and a
-   thread-local's offset from tp is its offset in the template. */
-_hart_tls_size = ALIGN(__etbss - __stdata, 64);
+/* The alignment of a hart's thread-local block, a power of two of at least 64
+   bytes: the template (.tdata then .tbss) and every block start on such a
+   boundary, so that a thread-local's offset from tp is its offset in the
+   template and a thread-local may ask for up to this alignment. The default,
+   64 bytes, is a cache line on most cores, so no two harts' blocks share one;
+   a user whose thread-locals hold page-aligned objects sets the page size. */
+PROVIDE(_hart_tls_align = 64);
+
+/* One hart's thread-local block: the template rounded up to _hart_tls_align. */
+_hart_tls_size = ALIGN(__etbss - __stdata, _hart_tls_align);
 
 ${TLS_CHECK}
 SECTIONS
@@ -128,11 +134,11 @@ SECTIONS
   /* The thread-local template: what every hart's block starts out as, read
    * only, so it lives beside .rodata. The runtime copies .tdata into a block
    * and zeroes the rest; .tbss takes no address space of its own, its symbols
-   * continue past .tdata. The template starts on a 64-byte boundary, which
-   * bounds the alignment a thread-local may ask for. */
-  .tdata : ALIGN(64)
+   * continue past .tdata. The template starts on a _hart_tls_align boundary,
+   * which bounds the alignment a thread-local may ask for. */
+  .tdata : ALIGN(_hart_tls_align)
   {
-    . = ALIGN(64);
+    . = ALIGN(_hart_tls_align);
     __stdata = .;
     *(.tdata .tdata.*);
     . = ALIGN(${ARCH_WIDTH});
@@ -186,7 +192,7 @@ SECTIONS
    * past the range the runtime zeroes: a hart fills its own block from the
    * template before it reads a thread-local, so the memory need not be zero
    * beforehand. */
-  .tls (NOLOAD) : ALIGN(64)
+  .tls (NOLOAD) : ALIGN(_hart_tls_align)
   {
     __stls = .;
     . += (_max_hart_id + 1) * _hart_tls_size;
@@ -261,12 +267,16 @@ BUG(riscv-rt): the LMA of .data is not ${ARCH_WIDTH}-byte aligned");
 ASSERT(__sbss % ${ARCH_WIDTH} == 0 && __ebss % ${ARCH_WIDTH} == 0, "
 BUG(riscv-rt): .bss is not ${ARCH_WIDTH}-byte aligned");
 
-ASSERT(__stdata % 64 == 0 && __stls % 64 == 0 && _hart_tls_size % 64 == 0, "
-BUG(riscv-rt): the thread-local template or the blocks are not 64-byte aligned");
+ASSERT(_hart_tls_align >= 64 && (_hart_tls_align & (_hart_tls_align - 1)) == 0, "
+ERROR(riscv-rt): `_hart_tls_align` must be a power of two of at least 64 bytes");
 
-ASSERT(ALIGNOF(.tdata) <= 64 && ALIGNOF(.tbss) <= 64, "
-ERROR(riscv-rt): a thread-local asks for more than 64-byte alignment, which the
-per-hart blocks do not provide");
+ASSERT(__stdata % _hart_tls_align == 0 && __stls % _hart_tls_align == 0
+       && _hart_tls_size % _hart_tls_align == 0, "
+BUG(riscv-rt): the thread-local template or the blocks are not `_hart_tls_align`-aligned");
+
+ASSERT(ALIGNOF(.tdata) <= _hart_tls_align && ALIGNOF(.tbss) <= _hart_tls_align, "
+ERROR(riscv-rt): a thread-local asks for more alignment than `_hart_tls_align`, which
+the per-hart blocks do not provide; raise `_hart_tls_align` in memory.x");
 
 ASSERT(__sheap % 4 == 0, "
 BUG(riscv-rt): start of .heap is not 4-byte aligned");
