@@ -141,10 +141,11 @@ _abs_start:
     beqz a0, 4f",
     #[cfg(feature = "pre-init")]
     "call __pre_init",
-    "// Copy .data from flash to RAM
+    "// Copy .data from flash to RAM, unless it is linked to load where it runs
     la t0, __sdata
     la a3, __edata
     la t1, __sidata
+    beq t0, t1, 2f
     bgeu t0, a3, 2f
 1:  ",
     #[cfg(target_arch = "riscv32")]
