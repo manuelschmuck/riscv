@@ -15,6 +15,9 @@
 //!
 //! - Setting up thread-local storage, one block per hart, if the `tls` feature is enabled.
 //!
+//! - Support for a runtime loaded elsewhere than it is linked, which makes its linked addresses
+//!   reachable in a hook before the rest of the start-up, if the `relocate` feature is enabled.
+//!
 //! - Support for a runtime in supervisor mode, that can be bootstrapped via
 //!   [Supervisor Binary Interface (SBI)](https://github.com/riscv-non-isa/riscv-sbi-doc).
 //!
@@ -568,6 +571,59 @@
 //! is provided by this crate). If the feature is disabled, the `__post_init` function is not required.
 //!
 //! You can use the [`#[post_init]`][attr-post-init] attribute to define a post-init function with Rust.
+//!
+//! ## `relocate`
+//!
+//! This is for a runtime that runs at an address other than the one it was linked at, for example a
+//! supervisor loaded at a physical address and linked at a virtual one: `_start` as provided by this
+//! crate jumps to the absolute address of `_abs_start` as its second step, which is no place before
+//! address translation is enabled.
+//!
+//! When enabled, `_start` skips that jump, so the early boot (interrupts off, the pre-init trap vector,
+//! the hart ID check, `gp` and the stack, `_mp_hook`, `__pre_init` and the RAM initialization) runs where
+//! the image was loaded. Once RAM is initialized, the runtime calls `__relocate`, which makes the linked
+//! addresses reachable, typically by enabling address translation, and returns. The runtime resumes at
+//! its linked address, sets `gp`, the stack and the pre-init trap vector again there, and continues as
+//! usual: thread-local storage, the FPU, `__post_init` and `main`. Memory initialization stays the
+//! runtime's: `__relocate` only makes the image reachable where it was linked.
+//!
+//! If the feature is enabled, the `__relocate` function must be defined in the user code (i.e., no
+//! default implementation is provided by this crate). The runtime calls it with:
+//!
+//! - `a0`-`a2`: the arguments `_start` was entered with, the hart ID in `a0`;
+//! - `a3`: the address `_start` was loaded at;
+//! - `a4`: the offset from there to where `_start` was linked, so that a symbol's linked address is its
+//!   load address plus `a4`;
+//! - `ra`: the linked address of the instruction the runtime resumes at.
+//!
+//! ### Important implementation guidelines
+//!
+//! - Implement it in assembly: until it returns, the image runs where it was loaded, so it may reach
+//!   code and data only relative to the program counter. The same holds for `_mp_hook` and `__pre_init`,
+//!   which run before it.
+//! - Return with `ret` once the linked addresses are reachable.
+//! - Preserve the callee-saved registers `s0-s11`, as the calling convention says. `sp` and `gp` are the
+//!   runtime's to set again after the return. The stack `sp` points at may be used: at its load address
+//!   until the linked addresses are reachable, and at its linked address (`sp + a4`) afterwards.
+//! - In RVE targets, do **NOT** use the `a5` register, as it is used to preserve the `a2` register.
+//!
+//! ### Implementation example
+//!
+//! The following sketch shows the shape of the function; how the linked addresses become reachable is
+//! the platform's.
+//!
+//! ``` ignore,no_run
+//! core::arch::global_asm!(
+//!     r#".section .text.__relocate, "ax"
+//!     .global __relocate
+//! __relocate:
+//!     // Map the image at its linked addresses, point `stvec` at the linked address of the
+//!     // instruction after the `satp` write, and write `satp`: the fetch after the write faults
+//!     // where the image was loaded and resumes where it was linked.
+//!     ret
+//!     "#
+//! );
+//! ```
 //!
 //! ## `tls`
 //!

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   `.rodata` and one block per hart past `.bss`, and `_start` points `tp` at the
   calling hart's block and fills it from the template on every start. Without the
   feature, an image that declares a thread-local fails to link.
+- New `relocate` feature, for a runtime loaded elsewhere than it is linked: `_start`
+  runs the early boot and the RAM initialization where the image was loaded, then
+  calls the user's `__relocate`, which makes the linked addresses reachable and
+  returns; the runtime resumes at the linked addresses and sets `gp`, the stack and
+  the pre-init trap vector again there. The user must define `__relocate`.
 
 ### Changed
 
