@@ -23,10 +23,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - `_start` skips the `.data` copy when `.data` is linked to load where it runs
   (`__sidata == __sdata`), instead of copying every word onto itself.
-- New `custom-start` feature: the runtime provides no `_start`, so a runtime loaded
-  elsewhere than it is linked (an S-mode kernel at a virtual address) can bring its
-  own start-up while keeping the linker script, the trap entry and the `entry`
-  attribute. The user must define `_start`.
 
 ## v0.18.0 - 2026-05-29
 

@@ -508,30 +508,6 @@
 //! [The Cargo Book](https://doc.rust-lang.org/cargo/reference/features.html#dependency-features)
 //! for a quick rundown on they work. None are enabled by default.
 //!
-//! ## `custom-start`
-//!
-//! When enabled, the runtime does **not** provide `_start`: the user defines it, and with it everything
-//! that runs before their own code (interrupts off, the trap vector, the stack, `gp`, `.data` and `.bss`
-//! initialization, the thread-local block under [`tls`](#tls), the FPU). The runtime still provides the linker script, the trap entry (`_start_trap`
-//! and the exception/interrupt dispatch) and the [`entry`] attribute, which exports `main`.
-//!
-//! This is for a runtime whose `_start` runs at an address other than the one it was linked at, for
-//! example a supervisor loaded at a physical address and linked at a virtual one: `_start` as provided by
-//! this crate jumps to the absolute address of `_abs_start` as its second step, before anything could
-//! enable address translation.
-//!
-//! ### Implementation example
-//!
-//! ``` ignore,no_run
-//! core::arch::global_asm!(
-//!     r#".section .init, "ax"
-//!     .global _start
-//! _start:
-//!     // Set up the machine, then jump to Rust
-//!     "#
-//! );
-//! ```
-//!
 //! ## `pre-init`
 //!
 //! When enabled, the runtime will execute the `__pre_init` function to be run **before RAM is initialized**.
@@ -639,9 +615,7 @@
 //! model (`-Z tls-model=local-exec`), so that a thread-local is reached at a fixed offset from `tp`. A
 //! thread-local may ask for an alignment of up to 64 bytes. In Rust, `#[thread_local]` statics need the
 //! nightly `thread_local` feature. Without this feature enabled, the linker refuses an image that
-//! declares a thread-local, since nothing would point `tp` at a block. Under [`custom-start`](#custom-start)
-//! the feature provides the layout alone: the user's `_start` points `tp` at block `hartid`,
-//! `__stls + hartid * _hart_tls_size`, and fills it, as the runtime's would.
+//! declares a thread-local, since nothing would point `tp` at a block.
 //!
 //! ## `custom-setup-interrupts`
 //!
