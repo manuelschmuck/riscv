@@ -254,10 +254,10 @@ _abs_start:
 }
 
 // RELOCATE: RAM is initialized, and with tls this hart's thread-local block filled, where the
-// image was loaded. The user's __relocate makes the linked addresses reachable and returns to
-// the linked address of the instruction after the jump, with the arguments _start was entered
+// image was loaded. The user's __relocate is called there with the arguments _start was entered
 // with in a0-a2, the address _start was loaded at in a3 and the offset from there to where it
-// was linked in a4.
+// was linked in a4; it makes the linked addresses reachable, adds a4 to its return address and
+// returns to the linked address of the instruction after the call.
 #[cfg(feature = "relocate")]
 {
     "mv a0, s0
@@ -276,10 +276,8 @@ _abs_start:
     auipc t0, %pcrel_hi(13f)
     ld t0, %pcrel_lo(11b)(t0)",
     "sub a4, t0, a3
-    la ra, 12f
-    add ra, ra, a4
-    la t0, __relocate
-    jr t0",
+    call __relocate
+    j 12f",
     #[cfg(target_arch = "riscv64")]
     ".balign 8
 13:

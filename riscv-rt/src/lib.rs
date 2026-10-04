@@ -593,14 +593,15 @@
 //! - `a3`: the address `_start` was loaded at;
 //! - `a4`: the offset from there to where `_start` was linked, so that a symbol's linked address is its
 //!   load address plus `a4`;
-//! - `ra`: the linked address of the instruction the runtime resumes at.
+//! - `ra`: the return address of the call, made where the image was loaded.
 //!
 //! ### Important implementation guidelines
 //!
 //! - Implement it in assembly: until it returns, the image runs where it was loaded, so it may reach
 //!   code and data only relative to the program counter. The same holds for `_mp_hook` and `__pre_init`,
 //!   which run before it.
-//! - Return with `ret` once the linked addresses are reachable.
+//! - Add `a4` to `ra`, so that the return lands where the runtime was linked, and return with `ret` once
+//!   the linked addresses are reachable.
 //! - Preserve the callee-saved registers `s0-s11`, as the calling convention says. `sp`, `gp` and, with
 //!   the `tls` feature, `tp` are the runtime's to set again after the return. The stack `sp` points at
 //!   may be used: at its load address until the linked addresses are reachable, and at its linked
@@ -619,6 +620,7 @@
 //!     r#".section .text.__relocate, "ax"
 //!     .global __relocate
 //! __relocate:
+//!     add ra, ra, a4
 //!     // Map the image at its linked addresses, point `stvec` at the linked address of the
 //!     // instruction after the `satp` write, and write `satp`: the fetch after the write faults
 //!     // where the image was loaded and resumes where it was linked.
