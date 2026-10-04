@@ -823,6 +823,9 @@ const _: () = {
 #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
 mod asm;
 
+#[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+pub mod layout;
+
 #[cfg(not(feature = "custom-exceptions"))]
 pub mod exceptions;
 

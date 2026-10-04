@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Added
 
+- New `layout` module: `max_hart_id`, `hart_stack_size`, `stack_start`, `stext`,
+  `start` and `stack_top(hartid)` read the layout symbols back at run time, each
+  address as the code reaches it.
 - New `tls` feature: the linker script lays out the thread-local template beside
   `.rodata` and one block per hart past `.bss`, and `_start` points `tp` at the
   calling hart's block and fills it from the template on every start. Without the
